@@ -1,1 +1,23 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
+public class ActiveSkillCharacter : Character
+{
+    protected override void FinishSkill()
+    {
+
+    }
+
+    protected override void PerformSkill()
+    {
+        base.PerformSkill();
+        currentSkillCoolTime = skillCoolTime;
+        StartCoroutine(Co_SkillDuration());
+    }
+
+    protected virtual void SkillExecution()
+    {
+
+    }
+}
