@@ -1,0 +1,22 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class KingPenguin : ActiveSkillCharacter
+{
+    [Header("Skill")]
+    [SerializeField] private float dexterityBuff;
+    private float originalDexterity;
+
+    protected override void PerformSkill()
+    {
+        base.PerformSkill();
+        originalDexterity = dexterity;      // 기본 손재주 저장
+        dexterity *= dexterityBuff;         // 손재주 증가
+    }
+
+    protected override void FinishSkill()
+    {
+        dexterity = originalDexterity;
+    }
+}
