@@ -1,0 +1,140 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MagellanicPenguin : PassiveSkillCharacter
+{
+    [Header("Skill")]
+    [SerializeField] private float movementSpeedIncrease;
+    [SerializeField] private float dexterityIncrease;
+    private float originalMoveSpeed;
+    private float originalDexterity;
+
+    /// <summary>
+    /// 재료 가공
+    /// </summary>
+    protected override void Process()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+        var crusher = facility.GetComponent<Crusher>();
+
+        if (handItem != null && crusher != null)
+        {
+            var handitemScript = handItem.GetComponent<SupplyIngredients>();
+
+            if (handitemScript.itemType == ItemType.enIce && isProcessKeyPressed && !handitemScript.isProcessed)
+            {
+                crusher.isProcess = true;
+            }
+        }
+
+        if (facility.facilityType == FacilityType.enProcessFacility && crusher.isProcess)
+        {
+            if (isProcessKeyPressed)
+            {
+                if (handItem != null && crusher.currentTapCount > 0) return;
+
+                // 현재 손에 든 아이템 제거
+                Destroy(handItem);
+
+                PadManager.instance.VivrationPad();
+                StartCoroutine(Co_SpawnEffect(sweetEffect, sweetEffectPos, 5f));
+                GameObject resultItem = crusher.Process(dexterity / 10);
+                if (resultItem != null)
+                {
+                    handItem = resultItem;
+                    AttachItemToHand();
+                    if (currentSkillCoolTime <= 0)
+                    {
+                        PerformSkill();    // 가공 완료했을때 스킬 사용
+                    }
+
+                    // 가공 완료 후 초기화
+                    crusher.currentTapCount = 0;
+                    crusher.isProcess = false;
+
+                    Debug.Log("가공된 아이템을 손에 쥐었습니다.");
+                }
+                else
+                {
+                    Debug.Log("가공이 완료되지 않았습니다.");
+                }
+
+                animator.SetTrigger("isProcess");
+            }
+        }
+
+        if (facility.currentOnItem != null)
+        {
+            var facilityitemScript = facility.currentOnItem.GetComponent<SupplyIngredients>();
+            var whipping = facilityitemScript.GetComponent<Whipping>();
+
+            if (handItem != null && facilityitemScript.itemType == ItemType.enWhipping)
+            {
+                var handitemScript = handItem.GetComponent<SupplyIngredients>();
+
+                if (!handitemScript.isProcessed)
+                {
+                    switch (handitemScript.itemType)
+                    {
+                        case ItemType.enStrawberry:
+                        case ItemType.enChocolate:
+                        case ItemType.enVanilla:
+                            whipping.whippingItemtype = handitemScript.itemType;
+                            whipping.isProcess = true;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+
+            if (facilityitemScript.itemType == ItemType.enWhipping && whipping != null && whipping.isProcess)
+            {
+                if (isProcessKeyPressed)
+                {
+                    if (handItem != null && whipping.currentTapCount > 0) return;
+                    if (handItem == null && whipping.currentTapCount <= 0) return;
+
+                    animator.SetTrigger("isWhip");
+                    Destroy(handItem); // 현재 손에 든 아이템 제거
+                    PadManager.instance.VivrationPad();
+                    StartCoroutine(Co_SpawnEffect(sweetEffect, sweetEffectPos, 5f));
+                    GameObject resultItem = whipping.Process(dexterity / 10);
+                    if (resultItem != null)
+                    {
+                        handItem = resultItem;
+                        PerformSkill();
+                        AttachItemToHand();
+
+                        // 가공 완료 후 초기화
+                        whipping.currentTapCount = 0;
+                        whipping.isProcess = false;
+
+                        Debug.Log("가공된 아이템을 손에 쥐었습니다.");
+                    }
+                    else
+                    {
+                        Debug.Log("가공이 완료되지 않았습니다.");
+                    }
+                }
+            }
+        }
+    }
+
+    protected override void FinishSkill()
+    {
+        moveSpeed = originalMoveSpeed;
+        dexterity = originalDexterity;
+    }
+
+    protected override void PerformSkill()
+    {
+        base.PerformSkill();
+        originalMoveSpeed = moveSpeed;
+        originalDexterity = dexterity;
+        moveSpeed *= movementSpeedIncrease;     // 속도 증가
+        dexterity *= dexterityIncrease;         // 손재주 증가
+        StartCoroutine(Co_SkillDuration());
+    }
+}
