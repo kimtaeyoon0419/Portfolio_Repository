@@ -1,0 +1,27 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class DefualtPenguin : ActiveSkillCharacter
+{
+    [Header("Skill")]
+    [SerializeField] private float movementSpeedIncrease;
+    private float originalMoveSpeed;
+
+    [SerializeField] GameObject skillPtc;
+
+    protected override void PerformSkill()
+    {
+        base.PerformSkill();
+        originalMoveSpeed = moveSpeed;
+        moveSpeed *= movementSpeedIncrease;
+        skillPtc.SetActive(true);
+    }
+
+    protected override void FinishSkill()
+    {
+        moveSpeed = originalMoveSpeed;
+        skillPtc.SetActive(false);
+    }
+}
+
