@@ -1,1 +1,16 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
+public class PassiveSkillCharacter : Character
+{
+    protected virtual void UseSkill()
+    {
+
+    }
+
+    protected override void FinishSkill()
+    {
+        // TODO : 스킬 끝났을 때
+    }
+}
