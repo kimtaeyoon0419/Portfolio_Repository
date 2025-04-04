@@ -1,0 +1,902 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.InputSystem;
+
+[RequireComponent(typeof(Rigidbody))]
+public abstract class Character : MonoBehaviour
+{
+    // 키설정 
+    // 상호작용 => x
+    // 시설 상호작용 => space
+    // 스킬 => e
+
+    [Header("Component")]
+    public Rigidbody rb;
+    public Animator animator;
+
+    [Header("Stat")]
+    [SerializeField] public string penguinName;
+    [SerializeField] public float moveSpeed = 0;
+    [SerializeField] private float spinSpeed;
+    [SerializeField] public float dexterity;
+
+    [Header("Skill")]
+    [SerializeField] public float skillCoolTime;
+    [SerializeField] protected float currentSkillCoolTime;
+    [SerializeField] public float skillDuration;
+
+    [Header("Move")]
+    private float horInput;
+    private float verInput;
+    private bool isOnIce = false;
+    private float iceAccelerationMultiplier = 0.08f; // 얼음 위에서의 가속 배율
+    private float iceDrag = 0.4f; // 얼음 위에서의 낮은 드래그 값
+    private float normalDrag = 1f; // 일반 상태에서의 드래그 값
+
+    [Header("CheckFacility")]
+    [SerializeField] protected LayerMask facilityLayer;
+    [SerializeField] private Transform rayPos;
+    [SerializeField] private float checkRadius; // 구체 감지 반경
+    [SerializeField] private float checkAngle; // 감지 각도
+    protected Collider nearestShelf;
+    private Collider[] previousShelfs;
+
+    [Header("CheckItem")]
+    [SerializeField] private LayerMask itemLayer;
+    private Collider nearestItem;
+    [SerializeField] private LayerMask railLayer;
+
+    [Header("Animation")]
+    private readonly int hashMove = Animator.StringToHash("isMove");
+    private readonly int hashIsProcess = Animator.StringToHash("isProcess");
+    private readonly int hashIsWhip = Animator.StringToHash("isWhip");
+
+    [Header("HandItem")]
+    [SerializeField] private Transform handItemPos;
+    [SerializeField] protected GameObject handItem;
+
+    [Header("UI")]
+    [SerializeField] private Slider skillCoolDownSlider;
+    [SerializeField] private TMP_Text skillCoolDownText;
+
+    [Header("Effect")]
+    [SerializeField] private GameObject crashEffect;
+    [SerializeField] private Transform crashEffectPos;
+    [Space(10f)]
+    [SerializeField] protected GameObject sweetEffect;
+    [SerializeField] protected Transform sweetEffectPos;
+    [SerializeField] private GameObject waterEffect;
+
+    [SerializeField] public bool isMove = true;
+    [SerializeField] public bool tutorialisMove = true;
+    private bool IsInteractingWithShelf => nearestShelf != null;
+    private bool IsInteractingWithItem => nearestItem != null;
+
+    private bool IsWaterFall = false;
+
+    [Header("Sound")]
+    [SerializeField] private AudioClip hitSound;
+
+    [Header("Color")]
+    [SerializeField] private List<ColorInfo> colorInfos;
+
+    public int playerNumber = 0;
+
+    [Header("KeyPress")]
+    protected bool isInteractionKeyPressed; // 상호작용 입력 확인
+    protected bool isProcessKeyPressed;     // 작업행동 입력 확인
+    bool isSkillKeyPressed;                 // 스킬사용 입력 확인
+    private bool wasInter = false;
+    private bool wasProsess = false;
+    private bool wasSkillPressed = false;
+
+    Vector3 inputVelocity;
+
+    private void Awake()
+    {
+        isMove = true;
+        rb = GetComponent<Rigidbody>();
+        animator = GetComponent<Animator>();
+        if (TutorialManager.instance != null)
+        {
+            TutorialManager.instance.playerCharacter = gameObject.GetComponent<Character>();
+        }
+    }
+
+    private void OnEnable()
+    {
+        ChangeColor(GameManager.instance.penguinColor);
+    }
+
+    protected virtual void Update()
+    {
+        if (!TimeManager.instance.timeSet)
+        {
+            if (!tutorialisMove)
+                return;
+            GetMovementInput();
+            HandleItemInteraction();
+            CheckFrontFacilityAndItem();
+            SkillExecution();
+            SkillCoolDownSlider();
+
+            if (currentSkillCoolTime > 0)
+            {
+                currentSkillCoolTime -= Time.deltaTime;
+            }
+
+            isSkillKeyPressed = Input.GetKeyDown(KeyCode.E);
+        }
+    }
+
+    public virtual void OnInteraction(InputAction.CallbackContext context)
+    {
+        if (context.performed && !isInteractionKeyPressed && !wasInter) // 키를 눌렀을 때만 실행
+        {
+            isInteractionKeyPressed = true;
+            HandleItemInteraction();
+            if (nearestShelf != null)
+            {
+                Supply();
+                Merge();
+                Submit();
+                Chuck();
+                Process();
+            }
+            wasInter = true;
+            isInteractionKeyPressed = false;
+        }
+        else if (context.canceled)
+        {
+            wasInter = false;
+        }
+    }
+
+    public virtual void OnProsess(InputAction.CallbackContext context)
+    {
+        if (context.performed && !isProcessKeyPressed && !wasProsess) // 키를 눌렀을 때만 실행
+        {
+            isProcessKeyPressed = true;
+            HandleItemInteraction();
+            if (nearestShelf != null)
+            {
+                Process();
+            }
+            wasProsess = true;
+            isProcessKeyPressed = false;
+        }
+        else if (context.canceled)
+        {
+            wasProsess = false;
+        }
+    }
+
+    public virtual void OnSkill(InputAction.CallbackContext context)
+    {
+        if (context.performed && !isSkillKeyPressed && !wasSkillPressed)
+        {
+            isSkillKeyPressed = true;
+            SkillExecution();
+            isSkillKeyPressed = false;
+        }
+        else if (context.canceled)
+        {
+            wasSkillPressed = false;
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        if (!TimeManager.instance.timeSet)
+        {
+            MoveCharacter();
+        }
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(rayPos.position, checkRadius);
+
+        // 각도 범위 시각화
+        Gizmos.color = Color.blue;
+        Vector3 rightBoundary = Quaternion.Euler(0, checkAngle, 0) * transform.forward;
+        Vector3 leftBoundary = Quaternion.Euler(0, -checkAngle, 0) * transform.forward;
+
+        Gizmos.DrawLine(transform.position, rayPos.position + rightBoundary * checkRadius);
+        Gizmos.DrawLine(transform.position, rayPos.position + leftBoundary * checkRadius);
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("IceDestoryMonster")) // 만약 예티랑 부딪혔을 때
+        {
+            Debug.Log("부딪힘");
+            Vector3 contactPoint = collision.contacts[0].point;
+            AudioEffectManager.instance.PlaySfx(hitSound);
+            StartCoroutine(Co_SpawnEffect(crashEffect, crashEffectPos, 0.2f));
+            PadManager.instance.VivrationPad();
+        }
+    }
+
+    private void OnCollisionStay(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("IceGround"))
+        {
+            // 미끄러짐 효과 시작
+            isOnIce = true;
+        }
+    }
+
+    private void OnCollisionExit(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("IceGround"))
+        {
+            // 미끄러짐 효과 종료
+            isOnIce = false;
+        }
+    }
+
+    /// <summary>
+    /// 색 변경
+    /// </summary>
+    /// <param name="colorName">변경할 색의 이름</param>
+    public void ChangeColor(string colorName)
+    {
+        SkinnedMeshRenderer skinnedMeshRenderer = GetComponentInChildren<SkinnedMeshRenderer>();
+
+        foreach (ColorInfo c in colorInfos)
+        {
+            if (c.colorName == colorName)
+            {
+                // _BaseMap 속성으로 텍스처 변경
+                skinnedMeshRenderer.sharedMaterial.SetTexture("_BaseMap", c.colorTexture);
+                break;
+            }
+        }
+    }
+
+    #region 이동 처리
+
+    public virtual void OnMove(InputAction.CallbackContext context)
+    {
+        Vector2 moveInput = context.ReadValue<Vector2>();
+        inputVelocity = new Vector3(moveInput.x, 0, moveInput.y) * moveSpeed; // 속도 반영
+    }
+
+    protected void GetMovementInput()
+    {
+        // isMove가 false일 때 키 입력을 무시
+        if (!isMove || !tutorialisMove)
+        {
+            horInput = 0;
+            verInput = 0;
+            return;
+        }
+
+
+    }
+    private void MoveCharacter()
+    {
+        if (!isMove || !tutorialisMove)
+            return;
+
+        if (inputVelocity != Vector3.zero)
+        {
+            Quaternion targetRot = Quaternion.LookRotation(inputVelocity);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, spinSpeed * Time.deltaTime);
+            animator.SetBool(hashMove, true);
+            StartCoroutine(MoveTutorial());
+        }
+        else
+        {
+            animator.SetBool(hashMove, false);
+        }
+
+        if (isOnIce)
+        {
+            inputVelocity *= iceAccelerationMultiplier * 13f;
+            rb.AddForce(inputVelocity, ForceMode.Acceleration);
+            rb.drag = iceDrag;
+        }
+        else
+        {
+            Vector3 currentVelocity = rb.velocity;
+            currentVelocity.y = rb.velocity.y;
+            rb.velocity = Vector3.Lerp(currentVelocity, inputVelocity, 0.07f);
+            rb.drag = normalDrag;
+        }
+    }
+
+    IEnumerator MoveTutorial()
+    {
+        yield return new WaitForSeconds(2f);
+        if (TutorialManager.instance != null)
+        {
+            if (TutorialManager.instance.currentMissionIndex == 0)
+            {
+                TutorialManager.instance.CompleteMission();
+            }
+        }
+    }
+
+    protected IEnumerator Co_SpawnEffect(GameObject effectObj, Transform effectPos, float effectTime)
+    {
+        Debug.Log("이펙트 소환");
+        GameObject ef = Instantiate(effectObj, effectPos.position, Quaternion.identity);
+        yield return new WaitForSeconds(effectTime);
+        Destroy(ef);
+    }
+    #endregion
+
+    #region 아이템 상호작용
+    /// <summary>
+    /// 아이템 상호작용
+    /// </summary>
+    protected void HandleItemInteraction()
+    {
+        // Chuck 예외 처리: 만약 앞에 있는 시설이 'AshBin'일 경우, 아이템을 버린다.
+        if (nearestShelf != null && nearestShelf.GetComponent<Facility>().facilityType == FacilityType.enAshBm)
+        {
+            Chuck(); // 앞에 'AshBin'이 있으면 Chuck 동작 처리 (아이템 버리기)
+            return;  // Chuck 동작 후 다른 동작을 막기 위해 함수 종료
+        }
+        
+        if (isInteractionKeyPressed)
+        {
+            if (handItem != null)
+            {
+                DropOrPlaceItem();
+            }
+            else
+            {
+                PickupItem();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 상황에 따른 아이템 상호작용 ( 버리기 or 올려두기 )
+    /// </summary>
+    private void DropOrPlaceItem()
+    {
+        // 가장 가까운 선반이 제출 시설인지 확인
+        if (nearestShelf != null)
+        {
+            var facility = nearestShelf.GetComponent<Facility>();
+            if (facility != null && facility.facilityType == FacilityType.enenSubmissionGacility) // 제출 시설 타입 체크
+            {
+                Debug.Log("제출 시설에서 아이템을 떨어뜨릴 수 없습니다.");
+                return; // 아이템을 떨어뜨리지 않음
+            }
+        }
+        if (IsInteractingWithShelf && nearestShelf.GetComponent<Shelf>() != null)
+        {
+            var shelf = nearestShelf.GetComponent<Shelf>();
+
+            // 선반에 이미 물건이 있는지 확인
+            if (!shelf.HasItemOnShelf()) // 선반에 아이템이 없을 때만 아이템을 놓음
+            {
+                shelf.ShelfOnItem(handItem);
+                handItem.transform.parent = null; // 부모 관계 해제
+                handItem.GetComponent<Collider>().isTrigger = false;
+
+                var handitemScript = handItem.GetComponent<SupplyIngredients>();
+                handitemScript.isThrow = false;
+
+                handItem = null; // handItem을 null로 설정하여 손에서 아이템을 제거
+
+
+                if (TutorialManager.instance != null && handitemScript.itemType == ItemType.enPlate)
+                {
+                    if (TutorialManager.instance.currentMissionIndex == 1)
+                    {
+                        TutorialManager.instance.CompleteMission();
+                    }
+                }
+
+            }
+            else
+            {
+                Debug.Log("선반에 이미 물건이 있습니다.");
+            }
+        }
+        else
+        {
+            if (GetNearestCollider(facilityLayer) == null && GetNearestCollider(railLayer) == null)
+            {
+                DropItemOnGround(); // 선반이 없으면 바닥에 아이템을 떨어뜨림
+                handItem = null; // 아이템을 바닥에 떨어뜨린 후 handItem을 null로 설정
+            }
+        }
+    }
+
+    /// <summary>
+    /// 땅에 아이템을 버리기
+    /// </summary>
+    protected void DropItemOnGround()
+    {
+        handItem.transform.parent = null;
+        Rigidbody handItemRb = handItem.GetComponent<Rigidbody>();
+
+        var handitemScript = handItem.GetComponent<SupplyIngredients>();
+        handitemScript.isThrow = true;
+
+        if (handItemRb != null)
+        {
+            handItem.GetComponent<Collider>().isTrigger = false;
+            handItemRb.constraints = RigidbodyConstraints.None;
+        }
+        handItem = null; // 아이템을 바닥에 떨어뜨린 후 null로 설정
+    }
+
+    /// <summary>
+    /// 아이템 줍기
+    /// </summary>
+    protected void PickupItem()
+    {
+        if (IsInteractingWithShelf)
+        {
+            handItem = nearestShelf.GetComponent<Shelf>()?.ReturnItemHand(ref handItem);
+        }
+        else if (IsInteractingWithItem)
+        {
+            handItem = nearestItem.gameObject;
+        }
+
+        if (handItem != null)
+        {
+            AttachItemToHand();
+        }
+    }
+
+    /// <summary>
+    /// 아이템을 펭귄 손에 붙히기
+    /// </summary>
+    protected void AttachItemToHand()
+    {
+        handItem.transform.position = handItemPos.position; // 손에 있는 아이템 위치 초기화
+        handItem.transform.rotation = transform.rotation;
+        handItem.transform.parent = transform;
+        handItem.GetComponent<Collider>().isTrigger = true;
+
+        Rigidbody handItemRb = handItem.GetComponent<Rigidbody>();
+
+
+        var handitemScript = handItem.GetComponent<SupplyIngredients>();
+        handitemScript.isThrow = false;
+
+        if (TutorialManager.instance != null)
+        {
+            if (TutorialManager.instance.currentMissionIndex == 2 && handitemScript.itemType == ItemType.enIce)
+            {
+                TutorialManager.instance.CompleteMission();
+            }
+        }
+        if (handItemRb != null)
+        {
+            handItemRb.constraints = RigidbodyConstraints.FreezePosition | RigidbodyConstraints.FreezeRotation;
+        }
+    }
+    #endregion
+
+    #region 시설 및 아이템 체크
+    /// <summary>
+    /// 앞에 있는 시설 또는 아이템 체크
+    /// </summary>
+    protected void CheckFrontFacilityAndItem()
+    {
+        nearestShelf = GetNearestCollider(facilityLayer);
+        nearestItem = GetNearestCollider(itemLayer);
+
+        if (nearestShelf != null)
+        {
+            Supply();
+            Merge();
+            Submit();
+            Chuck();
+            Process();
+        }
+        HighlightNearestShelf();
+    }
+
+    /// <summary>
+    /// 가장 가까운 오브젝트 찾기
+    /// </summary>
+    /// <param name="layer">찾을 오브젝트의 레이어</param>
+    /// <returns></returns>
+    private Collider GetNearestCollider(LayerMask layer)
+    {
+        Collider[] colliders = Physics.OverlapSphere(rayPos.position, checkRadius, layer);
+        Collider nearestCollider = null;
+        float minDistance = Mathf.Infinity; // 가장 가까운 거리 초기값을 무한대로 설정
+        float minAngle = checkAngle;
+
+        foreach (Collider collider in colliders)
+        {
+            Vector3 directionToCollider = (collider.transform.position - rayPos.position).normalized;
+            float angle = Vector3.Angle(rayPos.forward, directionToCollider);
+
+            if (angle <= checkAngle) // 각도가 일정 범위 내에 있으면
+            {
+                float distance = Vector3.Distance(rayPos.position, collider.transform.position); // 거리 계산
+
+                // 각도와 거리 모두를 고려해 더 가까운 오브젝트를 선택
+                if (nearestCollider == null || distance < minDistance || (distance == minDistance && angle < minAngle))
+                {
+                    nearestCollider = collider;
+                    minDistance = distance;
+                    minAngle = angle;
+                }
+            }
+        }
+
+        return nearestCollider;
+    }
+
+    /// <summary>
+    /// 가장 가까운 선반에 하이라이트 효과 적용, 선반이 사라지면 하이라이트 해제
+    /// </summary>
+    private void HighlightNearestShelf()
+    {
+        // 감지된 선반이 없으면 이전 선반의 하이라이트 해제
+        if (nearestShelf == null && previousShelfs != null)
+        {
+            foreach (var previousShelf in previousShelfs)
+            {
+                var facility = previousShelf.GetComponent<Facility>();
+
+                // null 체크 후 원래 색으로 복구
+                if (facility != null && facility.meshRenderer != null)
+                {
+                    facility.meshRenderer.material = facility.originalMaterial;
+                }
+                if (facility != null && facility.skinnedMeshRenderer != null)
+                {
+                    facility.skinnedMeshRenderer.material = facility.originalMaterial;
+
+                }
+            }
+
+            // previousShelfs 배열을 비워서 이후에 하이라이트가 다시 적용되지 않도록 함
+            previousShelfs = null;
+            return;
+        }
+
+        // 현재 감지된 선반이 이전 선반과 다른 경우, 이전 선반의 하이라이트 해제
+        if (previousShelfs != null)
+        {
+            foreach (var previousShelf in previousShelfs)
+            {
+                if (previousShelf != nearestShelf)
+                {
+                    var facility = previousShelf.GetComponent<Facility>();
+
+                    if (facility != null && facility.meshRenderer != null)
+                    {
+                        facility.meshRenderer.material = facility.originalMaterial;
+                    }
+                    if (facility != null && facility.skinnedMeshRenderer != null)
+                    {
+                        facility.skinnedMeshRenderer.material = facility.originalMaterial;
+
+                    }
+                }
+            }
+        }
+
+        // 현재 감지된 선반이 있으면 하이라이트 적용
+        if (nearestShelf != null)
+        {
+            var facility = nearestShelf.GetComponent<Facility>();
+
+            if (facility != null && facility.meshRenderer != null)
+            {
+                facility.meshRenderer.material = facility.CoatingMaterial; // 선택한 선반의 색을 변경
+            }
+            if (facility != null && facility.skinnedMeshRenderer != null)
+            {
+                facility.skinnedMeshRenderer.material = facility.CoatingMaterial;
+
+            }
+            // 현재 선반을 previousShelfs에 저장
+            previousShelfs = new Collider[] { nearestShelf };
+        }
+    }
+    #endregion
+
+    #region 시설 기능들
+    /// <summary>
+    /// 재료 수급
+    /// </summary>
+    void Supply()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+
+        if (facility != null)
+        {
+            switch (facility.facilityType)
+            {
+                case FacilityType.enSupplyFacility:
+
+                    if (isInteractionKeyPressed && handItem == null)
+                    {
+                        var supplyFacility = nearestShelf.GetComponent<SupplyFacility>();
+                        handItem = supplyFacility.Supply();
+                        if (TutorialManager.instance != null)
+                        {
+                            if (TutorialManager.instance.currentMissionIndex == 5)
+                            {
+                                TutorialManager.instance.CompleteMission();
+                            }
+                        }
+                        AttachItemToHand();
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// 재료 가공
+    /// </summary>
+    protected virtual void Process()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+        var crusher = facility.GetComponent<Crusher>();
+
+        if (handItem != null && crusher != null)
+        {
+            var handitemScript = handItem.GetComponent<SupplyIngredients>();
+
+            if (handitemScript.itemType == ItemType.enIce && isProcessKeyPressed && !handitemScript.isProcessed)
+            {
+                crusher.isProcess = true;
+            }
+        }
+
+        if (facility.facilityType == FacilityType.enProcessFacility && crusher.isProcess)
+        {
+            if (isProcessKeyPressed)
+            {
+                if (handItem != null && crusher.currentTapCount > 0) return;
+
+                // 현재 손에 든 아이템 제거
+                if (handItem != null)
+                {
+                    Destroy(handItem);
+                    handItem = null;
+                }
+
+                PadManager.instance.VivrationPad();
+                // 가공을 수행하고 결과 아이템을 받아옴
+                StartCoroutine(Co_SpawnEffect(sweetEffect, sweetEffectPos, 5f));
+                GameObject resultItem = crusher.Process(dexterity / 10);
+                if (resultItem != null)
+                {
+                    handItem = resultItem; // 결과 아이템을 handItem에 설정
+                    AttachItemToHand();    // 손에 붙이기
+
+                    if (TutorialManager.instance != null)
+                    {
+                        if (TutorialManager.instance.currentMissionIndex == 3)
+                        {
+                            TutorialManager.instance.CompleteMission();
+                        }
+                    }
+                    Debug.Log("가공된 아이템을 손에 쥐었습니다.");
+                }
+                else
+                {
+                    Debug.Log("가공이 완료되지 않았습니다.");
+                }
+
+                PadManager.instance.VivrationPad();
+                animator.SetTrigger(hashIsProcess);
+            }
+        }
+        if (facility.currentOnItem != null)
+        {
+            var facilityitemScript = facility.currentOnItem.GetComponent<SupplyIngredients>();
+            var whipping = facilityitemScript.GetComponent<Whipping>();
+
+            if (handItem != null && facilityitemScript.itemType == ItemType.enWhipping)
+            {
+                var handitemScript = handItem.GetComponent<SupplyIngredients>();
+
+                if (!handitemScript.isProcessed && handItem != null)
+                {
+                    switch (handitemScript.itemType)
+                    {
+                        case ItemType.enStrawberry:
+                        case ItemType.enChocolate:
+                        case ItemType.enVanilla:
+                            whipping.whippingItemtype = handitemScript.itemType;
+                            whipping.isProcess = true;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+
+            if (facilityitemScript.itemType == ItemType.enWhipping && whipping != null && whipping.isProcess)
+            {
+                if (isProcessKeyPressed)
+                {
+                    if (handItem != null && whipping.currentTapCount > 0) return;
+                    if (handItem == null && whipping.currentTapCount <= 0) return;
+
+                    animator.SetTrigger(hashIsWhip);
+                    if (handItem != null)
+                    {
+                        Destroy(handItem);
+                        handItem = null;
+                    }
+                    PadManager.instance.VivrationPad();
+                    StartCoroutine(Co_SpawnEffect(sweetEffect, sweetEffectPos, 5f));
+                    GameObject resultItem = whipping.Process(dexterity / 10); // 가공 결과 아이템 받아오기
+                    if (resultItem != null)
+                    {
+                        handItem = resultItem; // 결과 아이템을 handItem에 설정
+                        AttachItemToHand();    // 손에 붙이기
+
+                        if (TutorialManager.instance != null)
+                        {
+                            if (TutorialManager.instance.currentMissionIndex == 6)
+                            {
+                                TutorialManager.instance.CompleteMission();
+                            }
+                        }
+                        Debug.Log("가공된 아이템을 손에 쥐었습니다.");
+                    }
+                    else
+                    {
+                        Debug.Log("가공이 완료되지 않았습니다.");
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 음식 조합
+    /// </summary>
+    void Merge()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+
+        // 컨트롤러 타입에 맞는 입력 키 설정
+
+        if (facility != null && facility.currentOnItem != null && handItem != null)
+        {
+            if (isInteractionKeyPressed)
+            {
+                Plate plateScript;
+
+                // Plate 컴포넌트가 있는지 확인하고 조합 수행
+                if (facility.currentOnItem.TryGetComponent<Plate>(out plateScript) && plateScript.itemType == ItemType.enPlate)
+                {
+                    plateScript.AddHandItemToPlate(handItem);
+                    var handitemScript = handItem.GetComponent<SupplyIngredients>();
+
+                    if (TutorialManager.instance != null && handitemScript.itemType == ItemType.enIce)
+                    {
+                        if (TutorialManager.instance.currentMissionIndex == 4)
+                        {
+                            TutorialManager.instance.CompleteMission();
+                        }
+                    }
+                    Debug.Log("음식이 접시에 추가되었습니다.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 음식 제출
+    /// </summary>
+    void Submit()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+
+        if (facility != null && facility is SubmissionGacility submissionFacility)
+        {
+            if (isInteractionKeyPressed && handItem != null)
+            {
+                var plate = handItem.GetComponent<Plate>();
+
+                if (plate != null)
+                {
+                    // SubmissionGacility에 Plate 제출
+                    submissionFacility.SubmitPlate(plate);
+
+                    // 제출 후 Plate를 삭제
+                    Destroy(handItem.gameObject);
+                    handItem = null;
+                    Debug.Log("Plate가 제출되었습니다.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 버리기
+    /// </summary>
+    void Chuck()
+    {
+        var facility = nearestShelf.GetComponent<Facility>();
+
+        if (isInteractionKeyPressed)
+        {
+            if (facility != null && facility.facilityType == FacilityType.enAshBm && handItem != null)
+            {
+                // 손에 든 아이템 삭제
+                Destroy(handItem);
+
+                // 손에 아이템을 들고 있지 않게 설정
+                handItem = null;
+
+                Debug.Log("손에 든 아이템이 버려졌습니다.");
+            }
+        }
+    }
+
+    #endregion
+
+    #region Skill
+    /// <summary>
+    /// 스킬
+    /// </summary>
+    protected virtual void SkillExecution()
+    {
+        if (isSkillKeyPressed && currentSkillCoolTime <= 0)
+        {
+            PerformSkill();
+            Debug.Log("스킬 사용");
+            // 스킬 사용 후 쿨타임 초기화
+            //currentSkillCoolTime = skillCoolTime;
+        }
+    }
+
+    protected virtual void PerformSkill()
+    {
+
+    }
+
+    /// <summary>
+    /// 스킬 능력 지속
+    /// </summary>
+    /// <returns></returns>
+    protected IEnumerator Co_SkillDuration()
+    {
+        yield return new WaitForSeconds(skillDuration);
+
+        FinishSkill();
+    }
+
+    /// <summary>
+    /// 스킬 지속시간 종료시 사용종료 상태로 돌아오는 함수
+    /// </summary>
+    protected abstract void FinishSkill();
+
+    protected void SkillCoolDownSlider()
+    {
+        skillCoolDownSlider.value = currentSkillCoolTime / skillCoolTime;
+
+        if (currentSkillCoolTime <= 0)
+            skillCoolDownText.text = "";
+        else
+            skillCoolDownText.text = currentSkillCoolTime.ToString("F1");
+    }
+    #endregion
+}
