@@ -1,0 +1,27 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class AdeliePenguin : ActiveSkillCharacter
+{
+    [Header("Skill")]
+    [SerializeField] private float movementSpeedIncrease;
+    [SerializeField] private float dexterityIncrease;
+    private float originalMoveSpeed;
+    private float originalDexterity;
+
+    protected override void PerformSkill()
+    {
+        base.PerformSkill();
+        originalMoveSpeed = moveSpeed;
+        originalDexterity = dexterity;
+        moveSpeed *= movementSpeedIncrease;         // 속도 증가
+        dexterity *= dexterityIncrease;             // 손재주 증가
+    }
+
+    protected override void FinishSkill()
+    {
+        moveSpeed = originalMoveSpeed;
+        dexterity = originalDexterity;
+    }
+}
