@@ -1,0 +1,43 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class GentooPenguin : PassiveSkillCharacter
+{
+    [Header("Skill")]
+    [SerializeField] private float moveSpeedBuff;
+    private float originalMoveSpeed;
+    private float buffMoveSpeed;
+
+    private void Start()
+    {
+        originalMoveSpeed = moveSpeed;
+        buffMoveSpeed = moveSpeedBuff * moveSpeed;
+    }
+
+    protected override void Update()
+    {
+        if (handItem != null && moveSpeed != buffMoveSpeed) // 만약 손에 아이템이 있다면
+        {
+            UseSkill();
+        }
+        else if (handItem == null && originalMoveSpeed != moveSpeed)  // 만약 손에 아이템이 없다면
+        {
+            FinishSkill();
+        }
+        base.Update();
+    }
+
+    protected override void UseSkill()
+    {
+        base.UseSkill();
+        moveSpeed *= moveSpeedBuff;     // 속도 증가
+    }
+
+    protected override void FinishSkill()
+    {
+        base.FinishSkill();
+        moveSpeed = originalMoveSpeed;  // 속도 감소
+    }
+}
+
