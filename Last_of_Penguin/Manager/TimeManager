@@ -1,0 +1,149 @@
+using System.Collections;
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class TimeManager : MonoBehaviour
+{
+    public static TimeManager instance;
+
+    [Header("Timer")]
+    [SerializeField] private float stageTime;
+    public float currentTime { get; private set; }
+    [SerializeField] public bool timeSet = false;
+
+    [Header("StartUI")]
+    [SerializeField] private GameObject[] countDownUI;
+
+    [Header("TimerUI")]
+    [SerializeField] private TextMeshProUGUI timerText;
+    [SerializeField] private GameObject timeSetPanel;
+    private IEnumerator timerAnimCoroutine;
+
+    [Header("ScoreUI")]
+    [SerializeField] private GameObject scoreBordPanel;
+    [SerializeField] public GameObject[] starUI;
+
+    private void Awake()
+    {
+        instance = this;
+        timeSet = true;
+    }
+
+    private void Start()
+    {
+        stageTime = GameManager.instance.currentStageData.stageTime;
+        AudioEffectManager.instance.StopMusic();
+        AudioEffectManager.instance.ResetMusic();
+        ResetTimer();
+        StartTime(true);
+    }
+
+    IEnumerator Co_PauseDelay()
+    {
+        yield return new WaitForSeconds(0.01f);
+        Time.timeScale = 0; // 게임이 시작될 때 일시 정지 상태
+    }
+
+    private void Update()
+    {
+        if (currentTime <= 0 && !timeSet)
+        {
+            currentTime = 0;
+            StartCoroutine(TimeOver());
+            TimeTextSet();
+        }
+        else if (currentTime > 0 && !timeSet)
+        {
+            currentTime -= Time.deltaTime;
+            TimeTextSet();
+        }
+    }
+
+    /// <summary>
+    /// 타이머 초기화
+    /// </summary>
+    public void ResetTimer()
+    {
+        currentTime = stageTime;
+        timeSet = true;
+        TimeTextSet();
+    }
+
+    #region StartUI
+    public void StartTime(bool isStart)
+    {
+        if (timerAnimCoroutine != null)
+        {
+            StopCoroutine(timerAnimCoroutine);
+        }
+        timerAnimCoroutine = TimeStart(isStart);
+        StartCoroutine(timerAnimCoroutine);
+    }
+
+    /// <summary>
+    /// 3, 2, 1, Start 후 타이머 시작
+    /// </summary>
+    /// <returns></returns>
+    private IEnumerator TimeStart(bool isStart)
+    {
+        foreach (GameObject obj in countDownUI)
+        {
+            obj.SetActive(false);
+        }
+
+        if (isStart)
+        {
+            yield return new WaitForSecondsRealtime(4f);
+        }
+
+
+        //countdownAudio.Play();
+        AudioEffectManager.instance.PlaySound(transform.position, 8, Random.Range(1f, 1.1f));
+        for (int i = 0; i < countDownUI.Length; i++)
+        {
+            countDownUI[i].SetActive(true);
+            yield return new WaitForSecondsRealtime(1f);
+            countDownUI[i].SetActive(false);
+        }
+
+        timeSet = false;
+        Time.timeScale = 1f;
+        if (isStart)
+        {
+            AudioEffectManager.instance.PlayMusic(GameManager.instance.currentStageData.backGroundMusicSource);
+        }
+    }
+    #endregion
+
+    #region TimerUI
+    /// <summary>
+    /// Time이 전부 끝났을때 점수 표기
+    /// </summary>
+    /// <returns></returns>
+    private IEnumerator TimeOver()
+    {
+        timeSet = true;
+        timeSetPanel.SetActive(true);
+        yield return new WaitForSecondsRealtime(1.5f);
+        scoreBordPanel.SetActive(true);
+        StartCoroutine(ScoreManager.instance.Co_ScoreStart());
+    }
+
+    /// <summary>
+    /// 타이머 텍스트 초기화
+    /// </summary>
+    private void TimeTextSet()
+    {
+        int curTime = Mathf.RoundToInt(currentTime);
+        int min = curTime / 60;
+        int sec = curTime % 60;
+
+        // 시간 형식 지정
+        string timeFormatted = string.Format("{0:00}:{1:00}", min, sec);
+
+        timerText.text = timeFormatted;
+    }
+    #endregion
+}
