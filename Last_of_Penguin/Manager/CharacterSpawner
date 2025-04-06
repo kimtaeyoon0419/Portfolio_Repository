@@ -1,0 +1,63 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class CharacterSpawner : MonoBehaviour
+{
+    [Header("Characters")]
+    [SerializeField] private List<CharacterProfile> characters;
+    private SheetDataLoad sheetDataLoad;
+
+    [Header("SpawnPos")]
+    [SerializeField] private Transform spawnPos;
+
+    public void InputStat()
+    {
+        sheetDataLoad = GetComponent<SheetDataLoad>();
+
+        if (!GameManager.instance.isMuilt)
+        {
+            foreach (var character in characters)
+            {
+                if (GameManager.instance.penguinData.dataCharacterName == character.dataCharacterName)
+                {
+                    sheetDataLoad.character = Instantiate(character.inGameObject, spawnPos).GetComponent<Character>();
+                    sheetDataLoad.ApplyStatToCharacter();
+                    break;
+                }
+            }
+        }
+        else if (GameManager.instance.isMuilt)
+        {
+            List<TestLocalDataManager.PlayerData> players = TestLocalDataManager.Instance.players; // 플레이어들 데이터
+
+            for (int i = 0; i < players.Count; i++)
+            {
+                foreach(var character in characters)
+                {
+                    if (players[i].characterProfile.dataCharacterName == character.dataCharacterName) // 만약 플레이어가 고른 캐릭터와 데이터 이름이 같다면
+                    {
+                        TestLocalDataManager.PlayerData data = players[i];
+                        CharacterProfile characterData = data.characterProfile;
+                        if (data == null) continue;
+
+                        GameObject penguin = Instantiate(characterData.inGameObject, spawnPos.position, Quaternion.identity);
+                        sheetDataLoad.character = penguin.GetComponent<Character>();
+                        sheetDataLoad.ApplyStatToCharacter();   
+                        PlayerInput input = penguin.GetComponent<PlayerInput>();
+                        input.SwitchCurrentControlScheme(data.device);
+                        Debug.Log($"Player {data.playerIndex} 스폰: {data.characterProfile}, {data.device}");
+                        sheetDataLoad.character = null;
+                    }
+                }
+            }
+        }
+    }
+
+    IEnumerator Co_GetStat()
+    {
+        yield return null;
+        sheetDataLoad.ApplyStatToCharacter();
+    }
+}
