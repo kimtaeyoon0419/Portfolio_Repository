@@ -1,0 +1,65 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using Photon.Pun;
+public class Crusher : Facility
+{
+    [Header("TapCount")]
+    [SerializeField] public float maxTapCount;
+    [SerializeField] public float currentTapCount;
+
+    [Header("UI")]
+    [SerializeField] private Slider processSlider;
+
+    [SerializeField] private GameObject processPtc;
+    [SerializeField] private GameObject processFood;
+
+    [SerializeField] public bool isProcess; // 작동이 가능한가
+
+    private Animator anim;
+
+    private void Awake()
+    {
+        anim = GetComponent<Animator>();
+        // 초기화 등 필요한 코드
+        currentTapCount = 0; // 초기화
+        processSlider.gameObject.SetActive(false); // 시작 시 슬라이더 숨김
+    }
+
+    /// <summary>
+    /// 음식 가공
+    /// </summary>
+    /// <param name="dexterityValue">손재주 수치</param>
+    /// <returns>가공 완료된 음식 아이템</returns>
+    public GameObject Process(float dexterityValue)
+    {
+        if (!isProcess)
+            return null; // 프로세스가 작동하지 않을 경우 null 반환
+
+        if (maxTapCount <= currentTapCount) return null; // 가공 완료 상태
+
+        AudioEffectManager.instance.PlaySound(transform.position, 0, Random.Range(1f, 1.2f));
+
+        anim.SetTrigger("Process");
+
+        processSlider.gameObject.SetActive(true);
+        currentTapCount += dexterityValue;
+        processSlider.value = currentTapCount / maxTapCount;
+
+        Instantiate(processPtc, transform.position, Quaternion.identity);
+
+        // 가공 완료 체크
+        if (currentTapCount >= maxTapCount)
+        {
+            currentTapCount = 0; // 완료 후 Tap Count 초기화
+            processSlider.gameObject.SetActive(false);
+            isProcess = false;
+            // 가공된 음식 아이템 생성 및 반환
+            GameObject createdFood = Instantiate(processFood, transform.position + new Vector3(0, 1, -1), Quaternion.identity);
+            return createdFood; // 생성한 음식 객체 반환
+        }
+
+        return null; // 가공이 완료되지 않았을 경우 null 반환
+    }
+}
