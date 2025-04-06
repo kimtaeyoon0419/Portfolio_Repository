@@ -1,0 +1,28 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[Serializable]
+public class ColorInfo
+{
+    public string colorName;                    // 펭귄 색 이름
+    public Texture2D colorTexture;              // 펭귄 색 텍스쳐
+}
+
+[CreateAssetMenu(fileName = "NewCharacterData", menuName = "Character/Character Profile")]
+public class CharacterProfile : ScriptableObject
+{
+    public string uiCharacterName;              // ui 상에서 캐릭터 이름
+    public string dataCharacterName;            // data 상에서 캐릭터 이름
+    public GameObject uiObject;                 // 캐릭터를 표기할 ui 오브젝트
+    public Sprite uiSprite;
+    public GameObject inGameObject;             // 인게임 상에서 캐릭터 오브젝트
+    public int ordinary;                        
+    public int dexterity;
+    public Sprite skillImage;                   // 캐릭터 스킬 아이콘
+    public string skillName;                    // 캐릭터 스킬 이름
+    public string skillExplanation;             // 캐릭터 스킬 설명
+    public string skillType;                    // 스킬 타입(액티브 / 패시브)
+    public List<ColorInfo> colorInfos;          // 캐릭터 컬러 리스트
+}
