@@ -1,0 +1,89 @@
+using System.Collections;
+using TMPro;
+using UnityEngine;
+
+public class MoneyManager : MonoBehaviour
+{
+    public static MoneyManager instance;
+
+    [SerializeField] TMP_Text moneyText;
+
+    // 내부에서 사용하는 실제 변수
+    private float _currentMoney;
+    public float CurrentMoney => currentMoney;
+
+    // 애니메이션 코루틴 참조
+    private Coroutine animateCoroutine;
+
+    [SerializeField] private float animationDuration = 2.0f;  // 애니메이션 지속 시간을 인스펙터에서 설정 가능
+
+    public float currentMoney
+    {
+        get { return _currentMoney; }
+        set
+        {
+            if (_currentMoney != value)
+            {
+                _currentMoney = value;
+
+                if (animateCoroutine != null)  // 기존 애니메이션이 실행 중이면
+                {
+                    StopCoroutine(animateCoroutine);  // 기존 애니메이션 중단
+                }
+
+                // 값이 변경될 때 애니메이션 시작
+                animateCoroutine = StartCoroutine(AnimateMoneyChange(_currentMoney));
+            }
+        }
+    }
+
+
+    void Awake()
+    {
+        instance = this;
+    }
+
+    /// <summary>
+    /// 돈 텍스트 초기화 함수
+    /// </summary>
+    /// <param name="displayValue">값</param>
+    private void UpdateMoneyText(string displayValue)
+    {
+        moneyText.text = displayValue + " PT";  // 소수점 없이 표기
+    }
+
+    // 돈이 변경될 때 자리 수별로 랜덤 변환하면서 최종 값에 도달하는 애니메이션
+    IEnumerator AnimateMoneyChange(float targetMoney)
+    {
+        string targetMoneyStr = targetMoney.ToString();  // 목표 금액을 문자열로 변환
+        int numDigits = targetMoneyStr.Length;  // 자리 수 계산
+        
+        float elapsed = 0.0f;
+        while (elapsed < animationDuration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = elapsed / animationDuration;
+
+            char[] displayedDigits = new char[numDigits];
+            for (int i = 0; i < numDigits; i++)
+            {
+                // 애니메이션 진행에 따라 뒤에서부터 목표 값에 도달하게 처리
+                if (progress > (float)i / numDigits)
+                {
+                    displayedDigits[i] = targetMoneyStr[i];
+                }
+                else
+                {
+                    // 아직 도달하지 않은 자리수는 랜덤 숫자 표시
+                    displayedDigits[i] = Random.Range(0, 10).ToString()[0];
+                }
+            }
+
+            UpdateMoneyText(new string(displayedDigits));
+            yield return null;
+        }
+
+        // 애니메이션이 끝나면 정확한 값 표시
+        UpdateMoneyText(targetMoneyStr);
+    }
+}
