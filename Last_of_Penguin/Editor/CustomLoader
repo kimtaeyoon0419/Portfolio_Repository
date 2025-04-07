@@ -1,0 +1,89 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using UnityEditor;
+using TMPro;
+public class CustomLoader : MonoBehaviour
+{
+    //임시 커스텀 스테이지
+    StageData customStage;
+
+    //음식 리스트
+    public List<Food> FoodList;
+
+    //노래 삽입
+    public AudioClip ac;
+    
+    //토글로 아이스크림 선택
+    public Toggle choco;
+    public Toggle straw;
+    public Toggle vanila;
+
+    //InputText
+    public TMP_InputField oneStar;
+    public TMP_InputField twoStar;
+    public TMP_InputField threeStar;
+
+    //플레이타임
+    public Dropdown time;
+
+    //커스텀 플레이 패널
+    public GameObject onPannel;
+    public GameObject OnlyUseInEditorPannel;
+    //현제 스테이지 String
+    public string nowStage;
+
+    private void Start()
+    {
+        DontDestroyOnLoad(this);
+    }
+
+    public void OnGamePannel()
+    {
+        onPannel.SetActive(true);
+    }
+
+    public void OffGamePannel()
+    {
+        onPannel.SetActive(false);
+    }
+
+    public void SavePlay()
+    {
+        //Stage Data Instance 생성
+        customStage = ScriptableObject.CreateInstance<StageData>();
+        customStage.stageName = nowStage.Split(".")[0];
+        customStage.stageDescription = $"{nowStage.Split(".")[0]} 커스텀 스테이지입니다!";
+        customStage.FoodList = new List<Food>();
+        if (choco.isOn) customStage.FoodList.Add(FoodList[0]);
+        if (straw.isOn) customStage.FoodList.Add(FoodList[1]);
+        if (vanila.isOn) customStage.FoodList.Add(FoodList[2]);
+
+        customStage.backGroundMusicSource = ac;
+
+        customStage.starRequiredScore_3 = int.Parse(threeStar.text);
+        Debug.Log(threeStar.text);
+        customStage.starRequiredScore_2 = int.Parse(twoStar.text);
+        customStage.starRequiredScore_1 = int.Parse(oneStar.text);
+
+        if (time.value == 0) customStage.stageTime = 180;
+        if (time.value == 1) customStage.stageTime = 120;
+        if (time.value == 2) customStage.stageTime = 60;
+
+        #if UNITY_EDITOR
+        AssetDatabase.CreateAsset(customStage, $"Assets/Resources/PlayAsset/{nowStage.Split(".")[0]}.asset");
+        AssetDatabase.SaveAssets();
+        SceneManager.LoadScene("GridMap");
+        #else
+        OnlyUseInEditorPannel.SetActive(true);
+        #endif
+    }
+
+    public void OffPannel()
+    {
+        OnlyUseInEditorPannel.SetActive(false);
+    }
+
+}
