@@ -129,8 +129,6 @@ public abstract class Character : MonoBehaviour
             {
                 currentSkillCoolTime -= Time.deltaTime;
             }
-
-            isSkillKeyPressed = Input.GetKeyDown(KeyCode.E);
         }
     }
 
@@ -302,6 +300,8 @@ public abstract class Character : MonoBehaviour
             inputVelocity *= iceAccelerationMultiplier * 13f;
             rb.AddForce(inputVelocity, ForceMode.Acceleration);
             rb.drag = iceDrag;
+            if (rb.velocity.magnitude > maxIceSpeed)
+                rb.velocity = rb.velocity.normalized * maxIceSpeed;
         }
         else
         {
