@@ -291,7 +291,6 @@ public abstract class Character : MonoBehaviour
             Quaternion targetRot = Quaternion.LookRotation(inputVelocity);
             transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, spinSpeed * Time.deltaTime);
             animator.SetBool(hashMove, true);
-            StartCoroutine(MoveTutorial());
         }
         else
         {
@@ -310,18 +309,6 @@ public abstract class Character : MonoBehaviour
             currentVelocity.y = rb.velocity.y;
             rb.velocity = Vector3.Lerp(currentVelocity, inputVelocity, 0.07f);
             rb.drag = normalDrag;
-        }
-    }
-
-    IEnumerator MoveTutorial()
-    {
-        yield return new WaitForSeconds(2f);
-        if (TutorialManager.instance != null)
-        {
-            if (TutorialManager.instance.currentMissionIndex == 0)
-            {
-                TutorialManager.instance.CompleteMission();
-            }
         }
     }
 
